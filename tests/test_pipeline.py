@@ -195,3 +195,33 @@ def test_chaque_job_passe_par_la_mesure():
         script = " ".join(corps.get("script") or [])
         assert re.search(r"carbongate mesure --nom \S+", script), (
             f"{nom} ne passe pas par `carbongate mesure`")
+
+
+def test_une_branche_neuve_se_compare_a_la_branche_par_defaut():
+    """Au premier push d'une branche, GitLab met `CI_COMMIT_BEFORE_SHA` à
+    quarante zéros.
+
+    La porte basculait alors sur son repli — tout lancer — et le disait
+    honnêtement. Mais « on ne sait pas » était faux : la branche est neuve,
+    donc la base est la branche par défaut, et l'information est disponible.
+    Se rabattre sur le repli quand la réponse existe, c'est jeter la
+    démonstration pour rien : le premier pipeline de `demo-porte` a lancé les
+    quatre jobs là où deux suffisaient.
+    """
+    script = "\n".join(pipeline()["porte"]["script"])
+    assert "0000000000000000000000000000000000000000" in script, (
+        "le SHA nul n'est pas reconnu : une branche neuve relancera tout")
+    assert "CI_DEFAULT_BRANCH" in script
+    assert "git fetch" in script, (
+        "la branche par défaut n'est pas dans un clone de branche : sans "
+        "fetch, `git rev-parse` échoue et on repart sur le repli")
+
+
+def test_la_merge_request_reste_prioritaire_sur_le_repli():
+    """Sur une MR, `CI_MERGE_REQUEST_DIFF_BASE_SHA` est le point de
+    divergence exact : c'est une meilleure base que la tête de la branche
+    par défaut, qui a pu avancer depuis."""
+    script = "\n".join(pipeline()["porte"]["script"])
+    i = script.index("CI_MERGE_REQUEST_DIFF_BASE_SHA")
+    j = script.index("CI_DEFAULT_BRANCH")
+    assert i < j, "le repli passe avant la base exacte de la merge request"

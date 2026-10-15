@@ -59,6 +59,18 @@ porte:
     # Sur une merge request, la base est le point de divergence ; sinon, le
     # commit d'avant. Passer la mauvaise base ferait croire que tout a changé.
     - BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$CI_COMMIT_BEFORE_SHA}"
+    # Au PREMIER push d'une branche, GitLab met `CI_COMMIT_BEFORE_SHA` à
+    # quarante zéros. La porte basculait alors sur son repli — tout lancer —
+    # et le disait honnêtement. Mais ici « on ne sait pas » est faux : on
+    # sait. Une branche neuve se compare à la branche par défaut, et
+    # l'information est là. Se rabattre sur le repli quand la réponse est
+    # disponible, c'est jeter la démonstration pour rien.
+    - |
+      if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+        git fetch --quiet origin "$CI_DEFAULT_BRANCH"
+        BASE="$(git rev-parse FETCH_HEAD)"
+        echo "branche neuve : on compare a $CI_DEFAULT_BRANCH"
+      fi
     - echo "base de comparaison - $BASE"
     - python -m carbongate decide --depuis "$BASE" --env carbongate.env --pipeline-gitlab retenu.yml
     - echo "--- le pipeline engendre ---"
