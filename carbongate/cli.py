@@ -115,7 +115,17 @@ def fichiers_changes(reference: str | None) -> tuple[list[str], bool]:
     """
     commande = (["git", "diff", "--name-only", f"{reference}...HEAD"]
                 if reference else ["git", "diff", "--name-only", "HEAD~1", "HEAD"])
-    fini = subprocess.run(commande, capture_output=True, text=True)
+    try:
+        fini = subprocess.run(commande, capture_output=True, text=True)
+    except OSError as absent:
+        # git peut ne pas exister du tout. `python:3.12-slim` ne l'embarque
+        # pas, et la première exécution réelle de ce code sur GitLab est morte
+        # ici : `subprocess.run` lève au lieu de rendre un code non nul, donc
+        # le repli juste en dessous n'était jamais atteint. Une porte qui
+        # tombe en panne doit tout lancer, pas tout faire disparaître.
+        print(f"  git est introuvable ({absent}) : tous les jobs tournent",
+              file=sys.stderr)
+        return [], False
     if fini.returncode != 0:
         # Un premier commit n'a pas de HEAD~1, et un clone superficiel n'a pas
         # la base. Tout faire tourner est le repli sûr : se tromper en

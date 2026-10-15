@@ -105,3 +105,33 @@ def test_les_mesures_survivent_au_pipeline():
     cache = pipeline()["default"]["cache"]
     assert "carbongate-mesures.json" in cache["paths"]
     assert "$CI_COMMIT_REF_SLUG" in cache["key"]
+
+
+def test_les_gardes_sont_a_sur_defaut():
+    """Un job tourne SAUF si la porte a dit non, jamais l'inverse.
+
+    La première version gardait par `== "true"`. La première exécution réelle
+    sur GitLab a montré le coût : `porte` est morte — git n'est pas dans
+    `python:3.12-slim` — donc le dotenv n'a jamais existé, les variables sont
+    restées vides, et les trois jobs gardés ont **disparu du pipeline**. Pas
+    sautés : absents. Une porte en panne effaçait la vérification.
+
+    `!= "false"` fait qu'une variable absente laisse le job tourner. C'est la
+    même distinction que `changements_connus` côté code : « non » et « on ne
+    sait pas » ne donnent pas la même décision.
+    """
+    for nom, job in jobs_du_pipeline().items():
+        for regle in job.get("rules") or []:
+            condition = regle.get("if", "")
+            if "CARBONGATE_" not in condition:
+                continue
+            assert '!= "false"' in condition, (
+                f'{nom} est gardé par {condition!r} : si la porte échoue, la '
+                'variable est vide et le job disparaît au lieu de tourner')
+
+
+def test_la_porte_installe_ce_dont_elle_a_besoin():
+    """Elle interroge git ; l'image Python mince ne l'embarque pas."""
+    preparation = " ".join(pipeline()["porte"].get("before_script") or [])
+    assert "git" in preparation, (
+        "sans git, la porte bascule sur son repli et ne saute plus rien")

@@ -16,6 +16,20 @@
 #    qu'ils consomment vraiment. Le relevé est mis en cache et sert de base au
 #    chiffrage du pipeline suivant.
 #
+# ## Pourquoi `!= "false"` et non `== "true"`
+#
+# La première version gardait chaque job par `== "true"`. La première
+# exécution réelle a montré ce que ça coûte : `porte` est morte (git absent de
+# l'image), le dotenv n'a donc jamais existé, les variables sont restées
+# vides, et **les trois jobs gardés ont disparu du pipeline** — pas sautés,
+# absents. Une porte en panne effaçait la vérification au lieu de la laisser
+# tourner.
+#
+# Avec `!= "false"`, un job tourne sauf si la porte a explicitement dit non.
+# Une variable absente veut dire « la porte n'a pas pu se prononcer », et dans
+# ce cas tout tourne. C'est la même distinction que dans le code : « rien n'a
+# changé » et « on ne sait pas » ne donnent pas la même décision.
+#
 # ## Ce que ce pipeline ne fait pas, et c'est la règle du projet
 #
 # **Le carbone ne décide jamais de ce qui tourne.** `porte` décide sur ce qui a
@@ -49,6 +63,11 @@ default:
 # ── 1. La porte ──────────────────────────────────────────────────────────
 porte:
   stage: porte
+  before_script:
+    # `python:3.12-slim` n'embarque pas git, et la porte en a besoin pour
+    # savoir ce qui a changé. Sans lui elle bascule sur son repli — tout
+    # lancer — ce qui est sûr et inutile : on l'installe plutôt.
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends git
   script:
     # Sur une merge request, la base est le point de divergence ; sinon, le
     # commit d'avant. Passer la mauvaise base ferait croire que tout a changé,
@@ -71,7 +90,7 @@ porte:
 tests:
   <<: *mesure
   rules:
-    - if: $CARBONGATE_TESTS == "true"
+    - if: $CARBONGATE_TESTS != "false"
   script:
     - python -m carbongate mesure --nom tests -- python -m pytest -q
   artifacts:
@@ -81,7 +100,7 @@ tests:
 lint:
   <<: *mesure
   rules:
-    - if: $CARBONGATE_LINT == "true"
+    - if: $CARBONGATE_LINT != "false"
   script:
     - pip install --quiet ruff
     - python -m carbongate mesure --nom lint -- ruff check carbongate tests
@@ -89,7 +108,7 @@ lint:
 verifier-readme:
   <<: *mesure
   rules:
-    - if: $CARBONGATE_VERIFIER_README == "true"
+    - if: $CARBONGATE_VERIFIER_README != "false"
   script:
     # Le garde-fou du dépôt : il sort en erreur si un chiffre du README ne
     # correspond plus à ce que le code calcule.
