@@ -26,3 +26,18 @@ include = ["carbongate*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+# Les lignes de ce dépôt sont écrites pour une colonne 79 : la prose des
+# docstrings porte autant que le code, et elle se relit mal plus large.
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+# Le noyau non discutable : erreurs réelles (E, W), code mort et fautes de
+# nom (F), ordre des imports (I). Les familles UP et PL sont des préférences
+# de style — les activer ici ferait rougir le pipeline sur des avis plutôt
+# que sur des défauts, et un contrôle qu'on apprend à ignorer ne protège plus
+# rien. Si on les veut un jour, on les ajoute en les corrigeant, pas en les
+# subissant.
+select = ["E", "W", "F", "I"]

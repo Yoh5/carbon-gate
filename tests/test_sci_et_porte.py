@@ -12,8 +12,15 @@ import pytest
 
 from carbongate.intervalle import somme
 from carbongate.porte import Travail, decider
-from carbongate.sci import (Coefficient, Modele, Observation, energie_kwh,
-                            incarne_g, operationnel_g, sci_g)
+from carbongate.sci import (
+    Coefficient,
+    Modele,
+    Observation,
+    energie_kwh,
+    incarne_g,
+    operationnel_g,
+    sci_g,
+)
 
 ANNEE = 365 * 24 * 3600
 
@@ -55,7 +62,8 @@ def test_les_sources_sont_toutes_recuperables_pour_le_rapport():
     gouvernent le résultat le plus fort du projet."""
     sources = modele().sources()
     assert len(sources) == 6
-    assert all("(" in s and ")" in s for s in sources), "chaque ligne cite sa provenance"
+    assert all("(" in s and ")" in s for s in sources), \
+        "chaque ligne cite sa provenance"
 
 
 # --------------------------------------------------------------------------- #
@@ -288,7 +296,8 @@ def test_une_porte_plus_chere_que_ce_quelle_epargne_lavoue():
 def test_une_porte_du_meme_ordre_que_leconomie_ne_conclut_pas():
     """Et quand les deux se recouvrent, la porte se tait sur le gain net."""
     travaux = [Travail("a", ("src/*.py",)), Travail("b", ("docs/*.md",))]
-    mesures = {"a": Observation(100.0, 200.0, 60.0), "b": Observation(100.0, 200.0, 60.0)}
+    mesures = {"a": Observation(100.0, 200.0, 60.0),
+               "b": Observation(100.0, 200.0, 60.0)}
     d = decider(travaux, ["src/a.py"], mesures, modele(),
                 Observation(100.0, 200.0, 60.0))
     assert d.ecart.contient_zero

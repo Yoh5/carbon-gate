@@ -82,7 +82,8 @@ def test_la_propagation_encadre_un_tirage_de_monte_carlo():
         observes.append((va * vb + vc * vd) / e)
 
     assert min(observes) >= propage.bas, "un tirage est passé sous la borne basse"
-    assert max(observes) <= propage.haut, "un tirage est passé au-dessus de la borne haute"
+    assert max(observes) <= propage.haut, \
+        "un tirage est passé au-dessus de la borne haute"
 
     # Et l'encadrement n'est pas inutilement lâche : les extrêmes du tirage
     # atteignent chaque borne à mieux que 10 % de la largeur.

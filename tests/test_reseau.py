@@ -13,8 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from carbongate.intervalle import Intervalle
-from carbongate.reseau import (HorsSerie, Point, Serie, maintenant_utc,
-                               quand_lancer)
+from carbongate.reseau import HorsSerie, Point, Serie, maintenant_utc, quand_lancer
 
 BASE = datetime(2026, 10, 15, 0, 0, tzinfo=timezone.utc)
 

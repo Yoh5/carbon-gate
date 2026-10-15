@@ -234,7 +234,8 @@ class Decalage:
 
     @property
     def vaut_le_coup(self) -> bool:
-        return self.quand is not None and self.gain is not None and self.gain.economie_etablie
+        return (self.quand is not None and self.gain is not None
+                and self.gain.economie_etablie)
 
     @property
     def attente(self) -> timedelta:

@@ -20,7 +20,8 @@ import pytest
 yaml = pytest.importorskip("yaml", reason="PyYAML n'est pas une dépendance "
                                           "d'exécution : ce test est en plus")
 
-FLOW = Path(__file__).resolve().parent.parent / ".gitlab" / "duo" / "flows" / "apres-le-code.yaml"
+FLOW = (Path(__file__).resolve().parent.parent
+        / ".gitlab" / "duo" / "flows" / "apres-le-code.yaml")
 
 #: Valides dans la spécification v1, retirés par les custom flows.
 INTERDITS_AU_SOMMET = {"name", "description", "product_group"}

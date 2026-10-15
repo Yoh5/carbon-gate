@@ -111,7 +111,8 @@ class Decision:
         reserve = (f" {len(self.non_mesures)} job(s) sans mesure, exclus du bilan."
                    if self.non_mesures else "")
         if self.ecart is None:
-            return (f"{len(self.a_lancer)} job(s) à lancer, {len(self.sautes)} sauté(s). "
+            return (f"{len(self.a_lancer)} job(s) à lancer, "
+                f"{len(self.sautes)} sauté(s). "
                     "Aucune mesure fournie : rien n'est affirmé sur le carbone.")
         if not self.sautes:
             return ("Tous les jobs sont nécessaires : rien n'est sauté, "

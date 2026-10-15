@@ -1,4 +1,4 @@
-"""Le score SCI d'un travail de CI, rendu comme un encadrement et jamais comme un nombre.
+"""Le score SCI d'un travail de CI : un encadrement, jamais un nombre.
 
 ## La formule, et ce qu'elle cache
 
@@ -154,7 +154,8 @@ def energie_kwh(observation: Observation, modele: Modele) -> Intervalle:
     Le mot *estimée* est le seul qui compte dans cette phrase.
     """
     joules_processeur = modele.watts_par_coeur.plage() * observation.secondes_processeur
-    joules_memoire = modele.watts_par_gigaoctet.plage() * observation.gigaoctets_secondes
+    joules_memoire = (modele.watts_par_gigaoctet.plage()
+                      * observation.gigaoctets_secondes)
     return somme((joules_processeur, joules_memoire)) / _JOULES_PAR_KWH
 
 
@@ -186,7 +187,8 @@ def _inverse(plage: Intervalle) -> Intervalle:
     return Intervalle(1.0 / plage.haut, 1.0 / plage.bas)
 
 
-def sci_g(observation: Observation, modele: Modele, *, unites: float = 1.0) -> Intervalle:
+def sci_g(observation: Observation, modele: Modele, *,
+          unites: float = 1.0) -> Intervalle:
     """SCI = (O + M) par R, en grammes de CO2e par unité fonctionnelle.
 
     `unites` est R. Le défaut de 1 rend le score d'une seule exécution, ce qui

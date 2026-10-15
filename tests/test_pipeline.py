@@ -78,7 +78,6 @@ def test_chaque_job_declare_a_bien_un_job_dans_le_pipeline():
 def test_le_job_toujours_na_pas_de_garde_dans_le_pipeline():
     """`toujours: true` et une règle `if` seraient deux avis contradictoires,
     et c'est la règle du pipeline qui gagnerait."""
-    from carbongate.cli import variable
     inconditionnels = {j["nom"] for j in jobs_de_la_config() if j.get("toujours")}
     assert inconditionnels, "aucun job inconditionnel : le scan peut être sauté"
     for nom in inconditionnels:
@@ -135,3 +134,25 @@ def test_la_porte_installe_ce_dont_elle_a_besoin():
     preparation = " ".join(pipeline()["porte"].get("before_script") or [])
     assert "git" in preparation, (
         "sans git, la porte bascule sur son repli et ne saute plus rien")
+
+
+def test_le_scan_ne_depend_daucun_etage_precedent():
+    """Le seul job que ce projet jure de ne jamais sauter doit aussi survivre
+    à l'échec d'un autre.
+
+    GitLab marque **Skipped** tout un étage dès qu'un étage précédent échoue.
+    Au premier pipeline réel, `lint` a échoué et l'historique affichait
+    « scan-securite : Skipped » — la thèse du projet contredite à l'écran, là
+    où un juré regarde. `needs: []` détache le job de l'ordre des étages.
+    """
+    scan = jobs_du_pipeline()["scan-securite"]
+    assert scan.get("needs") == [], (
+        "sans needs: [], un échec en amont fait apparaître le scan comme "
+        "sauté, ce que ce dépôt affirme impossible")
+
+
+def test_les_jobs_qui_mesurent_installent_de_quoi_tester():
+    """`pip install -e .` n'installe pas pytest : le projet n'a aucune
+    dépendance d'exécution, et c'est délibéré."""
+    preparation = " ".join(pipeline()[".mesure"]["before_script"])
+    assert "pytest" in preparation

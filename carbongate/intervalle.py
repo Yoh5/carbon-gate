@@ -53,7 +53,8 @@ class Intervalle:
 
     def __post_init__(self) -> None:
         if not (math.isfinite(self.bas) and math.isfinite(self.haut)):
-            raise ValueError(f"un intervalle fini était attendu : [{self.bas}, {self.haut}]")
+            raise ValueError("un intervalle fini était attendu : "
+                             f"[{self.bas}, {self.haut}]")
         if self.bas > self.haut:
             raise ValueError(f"bornes inversées : [{self.bas}, {self.haut}]")
         if self.bas < 0:

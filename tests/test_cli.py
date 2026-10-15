@@ -12,7 +12,6 @@ commentaire du code affirmait le contraire.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -30,8 +29,8 @@ def config(chemin: Path, jobs=None) -> Path:
         {"nom": "construire-doc", "motifs": ["docs/*", "*.md"]},
         {"nom": "scan-securite", "toujours": True},
     ]
-    coefficient = lambda b, h, u: {"bas": b, "haut": h, "unite": u,
-                                   "source": "contrôle"}
+    def coefficient(b, h, u):
+        return {"bas": b, "haut": h, "unite": u, "source": "contrôle"}
     chemin.write_text(json.dumps({
         "jobs": jobs,
         "modele": {
@@ -47,8 +46,9 @@ def config(chemin: Path, jobs=None) -> Path:
 
 
 def lire_env(chemin: Path) -> dict[str, str]:
-    return dict(l.split("=", 1) for l in
-                chemin.read_text(encoding="utf-8").splitlines() if l.strip())
+    return dict(ligne.split("=", 1) for ligne
+                in chemin.read_text(encoding="utf-8").splitlines()
+                if ligne.strip())
 
 
 # --------------------------------------------------------------------------- #
@@ -188,7 +188,8 @@ def test_une_mesure_sous_reserve_nest_pas_enregistree(tmp_path, monkeypatch):
     main(["mesure", "--nom", "eclair", "--",
           sys.executable, "-c", "pass"])
     fichier = tmp_path / "carbongate-mesures.json"
-    enregistre = json.loads(fichier.read_text(encoding="utf-8")) if fichier.exists() else {}
+    enregistre = (json.loads(fichier.read_text(encoding="utf-8"))
+                  if fichier.exists() else {})
     # Soit la mesure porte et elle est là, soit elle ne porte pas et elle est
     # absente — jamais une valeur inventée pour combler.
     assert "eclair" not in enregistre or enregistre["eclair"]["secondes_horloge"] > 0

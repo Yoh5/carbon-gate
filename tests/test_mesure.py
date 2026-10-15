@@ -20,8 +20,14 @@ import sys
 
 import pytest
 
-from carbongate.mesure import (ECHANTILLONS_MINIMUM, Mesure, cpu_depuis_stat,
-                               mesurer, sonde_de_la_plateforme, _integrer)
+from carbongate.mesure import (
+    ECHANTILLONS_MINIMUM,
+    Mesure,
+    _integrer,
+    cpu_depuis_stat,
+    mesurer,
+    sonde_de_la_plateforme,
+)
 
 SONDE = sonde_de_la_plateforme()
 besoin_de_sonde = pytest.mark.skipif(

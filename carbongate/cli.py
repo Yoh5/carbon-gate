@@ -40,7 +40,6 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Sequence
 
-from .intervalle import Intervalle
 from .mesure import mesurer
 from .porte import Travail, decider
 from .rapport import rendre
@@ -130,11 +129,12 @@ def fichiers_changes(reference: str | None) -> tuple[list[str], bool]:
         # Un premier commit n'a pas de HEAD~1, et un clone superficiel n'a pas
         # la base. Tout faire tourner est le repli sûr : se tromper en
         # lançant coûte des grammes, se tromper en sautant coûte un incident.
-        print(f"  git n'a pas pu lister les changements "
-              f"({fini.stderr.strip().splitlines()[0][:80] if fini.stderr.strip() else '?'}) :"
+        detail = (fini.stderr.strip().splitlines()[0][:80]
+                  if fini.stderr.strip() else "?")
+        print(f"  git n'a pas pu lister les changements ({detail}) :"
               " tous les jobs tournent", file=sys.stderr)
         return [], False
-    return [l.strip() for l in fini.stdout.splitlines() if l.strip()], True
+    return [x.strip() for x in fini.stdout.splitlines() if x.strip()], True
 
 
 # ── Nom de variable ──────────────────────────────────────────────────────
@@ -220,18 +220,29 @@ def commande_exemple_config(args: argparse.Namespace) -> int:
         raise SystemExit(f"{chemin} existe déjà ; --ecraser pour le remplacer.")
     ANNEE = 365 * 24 * 3600
     modele = {
-        "watts_par_coeur": {"bas": 0.74, "haut": 3.50, "unite": "W/vCPU",
-                            "source": "Cloud Carbon Footprint, moyennes x86 au repos et en charge"},
-        "watts_par_gigaoctet": {"bas": 0.30, "haut": 0.42, "unite": "W/Go",
-                                "source": "Cloud Carbon Footprint, coefficient mémoire"},
-        "intensite_reseau": {"bas": 380.0, "haut": 480.0, "unite": "gCO2e/kWh",
-                             "source": "moyenne annuelle du réseau — à remplacer par une mesure horaire"},
-        "carbone_incarne_machine": {"bas": 1.2e6, "haut": 1.8e6, "unite": "gCO2e",
-                                    "source": "analyses de cycle de vie de serveurs, fourchette publiée"},
-        "duree_de_vie": {"bas": 3 * ANNEE, "haut": 6 * ANNEE, "unite": "s",
-                         "source": "durée d'amortissement usuelle d'un serveur, 3 à 6 ans"},
-        "part_de_machine": {"bas": 0.02, "haut": 0.25, "unite": "part",
-                            "source": "part d'un exécuteur partagé attribuée à un job — à mesurer chez soi"},
+        "watts_par_coeur": {
+            "bas": 0.74, "haut": 3.50, "unite": "W/vCPU",
+            "source": "Cloud Carbon Footprint, moyennes x86 au repos "
+                      "et en charge"},
+        "watts_par_gigaoctet": {
+            "bas": 0.30, "haut": 0.42, "unite": "W/Go",
+            "source": "Cloud Carbon Footprint, coefficient mémoire"},
+        "intensite_reseau": {
+            "bas": 380.0, "haut": 480.0, "unite": "gCO2e/kWh",
+            "source": "moyenne annuelle du réseau — à remplacer par une "
+                      "mesure horaire"},
+        "carbone_incarne_machine": {
+            "bas": 1.2e6, "haut": 1.8e6, "unite": "gCO2e",
+            "source": "analyses de cycle de vie de serveurs, fourchette "
+                      "publiée"},
+        "duree_de_vie": {
+            "bas": 3 * ANNEE, "haut": 6 * ANNEE, "unite": "s",
+            "source": "durée d'amortissement usuelle d'un serveur, "
+                      "3 à 6 ans"},
+        "part_de_machine": {
+            "bas": 0.02, "haut": 0.25, "unite": "part",
+            "source": "part d'un exécuteur partagé attribuée à un job "
+                      "— à mesurer chez soi"},
     }
     squelette = {
         "_lisez_moi": ("Chaque coefficient porte sa source : le type lève si "

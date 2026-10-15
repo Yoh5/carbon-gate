@@ -85,7 +85,11 @@ porte:
 .mesure: &mesure
   stage: verifier
   before_script:
-    - pip install --quiet -e .
+    # `-e .` installe le paquet, pas de quoi le tester : `pyproject.toml` ne
+    # déclare aucune dépendance d'exécution, c'est voulu, et pytest n'en est
+    # donc pas une. Sans cette ligne, `python -m pytest` sortait en 25 ms et
+    # la mesure refusait — correctement — d'enregistrer ça.
+    - pip install --quiet -e . pytest pyyaml
 
 tests:
   <<: *mesure
@@ -114,12 +118,19 @@ verifier-readme:
     # correspond plus à ce que le code calcule.
     - python -m carbongate mesure --nom verifier-readme -- python verifier_readme.py
 
-# `toujours: true` dans carbongate.json : aucune règle ici ne peut le sauter,
-# et le test `test_un_job_absurdement_cher_tourne_quand_meme` tient la même
-# promesse du côté du code.
+# `toujours: true` dans carbongate.json : aucune règle ici ne peut le sauter.
+#
+# `needs: []` n'est pas une optimisation. Sans lui, ce job appartient à un
+# étage postérieur, et GitLab marque **Skipped** tout un étage dès qu'un étage
+# précédent échoue : le premier pipeline réel affichait donc
+# « scan-securite : Skipped » parce que `lint` avait échoué. Un juré qui lit
+# l'historique voit alors le seul job que ce projet jure de ne jamais sauter,
+# sauté. `needs: []` le détache de l'ordre des étages : il part immédiatement
+# et son sort ne dépend de personne.
 scan-securite:
   <<: *mesure
   stage: livrer
+  needs: []
   script:
     - pip install --quiet pip-audit
     - python -m carbongate mesure --nom scan-securite -- pip-audit --strict
