@@ -156,3 +156,23 @@ def test_les_jobs_qui_mesurent_installent_de_quoi_tester():
     dépendance d'exécution, et c'est délibéré."""
     preparation = " ".join(pipeline()[".mesure"]["before_script"])
     assert "pytest" in preparation
+
+
+def test_la_chaine_doutils_est_mise_a_jour_avant_detre_auditee():
+    """`pip-audit` audite l'environnement, pas seulement ce projet.
+
+    Un dépôt sans aucune dépendance d'exécution peut donc échouer sur sa
+    propre chaîne d'outils, et c'est ce qui est arrivé au premier scan réel :
+    l'image embarque pip 25.0.1, visé par PYSEC-2026-1795 et corrigé en 25.3.
+
+    La réponse a été de mettre à jour. Si quelqu'un remplace un jour cette
+    ligne par `--ignore-vuln`, ce test tombe — et faire taire un scan la
+    première fois qu'il parle est la façon la plus sûre de n'en plus rien
+    tirer ensuite.
+    """
+    preparation = pipeline()[".mesure"]["before_script"]
+    assert any("--upgrade pip" in ligne for ligne in preparation), (
+        "la chaîne d'outils n'est pas mise à jour avant l'audit")
+    scan = " ".join(pipeline()["scan-securite"]["script"])
+    assert "--ignore-vuln" not in scan, (
+        "une vulnérabilité ignorée est une vulnérabilité présente")

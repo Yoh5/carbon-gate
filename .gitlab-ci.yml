@@ -85,6 +85,13 @@ porte:
 .mesure: &mesure
   stage: verifier
   before_script:
+    # `pip-audit` audite l'ENVIRONNEMENT, pas seulement ce projet. Un dépôt
+    # sans aucune dépendance d'exécution peut donc échouer sur sa propre
+    # chaîne d'outils, et c'est ce qui est arrivé : l'image embarque pip
+    # 25.0.1, que PYSEC-2026-1795 vise, corrigé en 25.3. La réponse est de
+    # mettre à jour, pas d'ignorer la vulnérabilité — un scan qu'on fait taire
+    # la première fois qu'il parle ne sert plus à rien ensuite.
+    - pip install --quiet --upgrade pip
     # `-e .` installe le paquet, pas de quoi le tester : `pyproject.toml` ne
     # déclare aucune dépendance d'exécution, c'est voulu, et pytest n'en est
     # donc pas une. Sans cette ligne, `python -m pytest` sortait en 25 ms et
