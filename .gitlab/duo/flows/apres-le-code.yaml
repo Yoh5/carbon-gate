@@ -1,0 +1,220 @@
+# Le flow post-code : revue, sécurité, carbone, verdict — sans humain dans la boucle.
+#
+# Déclaré en Hands-off, et la raison tient en une phrase : **ce qui décide ici
+# n'est pas un agent.** Le pipeline a déjà tranché ce qui tourne, avec du code
+# déterministe qui regarde ce qui a changé ; `carbongate rapport` a chiffré ce
+# que ça a coûté. Les agents de ce flow lisent, jugent la correction et la
+# sécurité, et écrivent un verdict. Aucun d'eux ne peut sauter un job, et
+# aucun ne peut faire taire le scan de sécurité : ces décisions-là sont prises
+# ailleurs, par du code, avant qu'un modèle soit appelé.
+#
+# C'est ce qui rend l'autonomie défendable. Un flow entièrement autonome dont
+# les décisions reposent sur le jugement d'un modèle est un pari ; celui-ci
+# est une chaîne où le modèle fait ce qu'il sait faire — lire du diff, repérer
+# une faute, rédiger — et où les arbitrages sont déterministes par
+# construction.
+#
+# ## Déclencheur
+#
+# À créer dans l'interface : **AI > Triggers > New flow trigger**, événement
+# *Merge request / Created*, et `Configuration path` pointant sur ce fichier.
+# Le règlement rappelle que seul un humain peut déclencher un flow — un bot ou
+# un autre flow ne le peut pas. L'action humaine ici est la seule du cycle :
+# ouvrir la merge request. Tout ce qui suit se fait sans elle.
+#
+# ## Ce que ce fichier ne contient pas, et pourquoi
+#
+# Pas de `DeterministicStepComponent`. Il exige un `tool_name` qui existe
+# vraiment dans la boîte à outils, et le framework valide au chargement : un
+# nom inventé fait échouer le flow au démarrage, pas à l'exécution. La liste
+# des outils n'est pas publiée dans la documentation publique, donc elle se
+# lit dans l'interface (AI Catalog) avant d'ajouter ces étapes. C'est la
+# première amélioration à faire, et elle est substantielle : elle déplacerait
+# la publication du verdict et la fusion du côté déterministe.
+#
+# Pas de `HumanInputComponent` non plus, et c'est le choix de niveau : en
+# ajouter un ferait basculer la soumission en Supervised.
+
+version: "v1"
+environment: ambient
+
+components:
+  # 1. Ce qui a changé. Tout le reste en dépend, donc c'est l'entrée.
+  - name: "changement"
+    type: AgentComponent
+    prompt_id: "lire_le_changement"
+    inputs:
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:goal"
+        as: "mr_iid"
+    ui_log_events: ["on_agent_final_answer"]
+
+  # 2. La correction. C'est elle qui décide si la livraison tient, et c'est
+  #    la seule chose qui ait le droit de bloquer.
+  - name: "revue"
+    type: AgentComponent
+    prompt_id: "revue_de_correction"
+    inputs:
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:goal"
+        as: "mr_iid"
+    ui_log_events: ["on_agent_final_answer"]
+
+  # 3. La sécurité, séparée de la revue exprès : fondues ensemble, une revue
+  #    satisfaite enterre une remarque de sécurité sous huit remarques de style.
+  - name: "securite"
+    type: AgentComponent
+    prompt_id: "revue_de_securite"
+    inputs:
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:goal"
+        as: "mr_iid"
+    ui_log_events: ["on_agent_final_answer"]
+
+  # 4. Le carbone. Il RAPPORTE, il ne recommande pas — et son prompt le lui
+  #    interdit explicitement, parce que c'est la règle du projet et qu'un
+  #    prompt permissif est la façon la plus simple de la perdre.
+  - name: "carbone"
+    type: AgentComponent
+    prompt_id: "lire_le_rapport_carbone"
+    inputs:
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:goal"
+        as: "mr_iid"
+    ui_log_events: ["on_agent_final_answer"]
+
+  # 5. Un seul commentaire, pas quatre. Quatre robots qui parlent dans une MR
+  #    font qu'on n'en lit aucun.
+  - name: "verdict"
+    type: AgentComponent
+    prompt_id: "rendre_le_verdict"
+    inputs:
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:goal"
+        as: "mr_iid"
+    ui_log_events: ["on_agent_final_answer"]
+
+prompts:
+  - prompt_id: "lire_le_changement"
+    name: "Lire le changement"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You read a merge request and state what actually changed. Files, and
+        what each change does. You do not judge it, and you do not suggest
+        anything: two later agents do that, and a summary that already carries
+        a verdict steers them.
+
+        If the diff is large, say which parts you did not read. A summary that
+        silently covers two thirds of a change is worse than one that covers
+        a third and says so.
+      user: |
+        Project {{project_id}}, merge request {{mr_iid}}.
+        State what changed, file by file.
+
+  - prompt_id: "revue_de_correction"
+    name: "Revue de correction"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You review a merge request for correctness only. Not style, not
+        naming, not carbon.
+
+        Report a finding only if you can name the input or the state that
+        makes it go wrong. "This could be clearer" is not a finding. If you
+        find nothing, say so plainly: a review that always finds something
+        teaches people to stop reading reviews.
+
+        This repository has one rule above all others, and a change that
+        breaks it is always a blocking finding: **a job is never skipped
+        because it is expensive.** Skipping is decided by what changed, never
+        by what it costs. If a diff lets an emission figure influence what
+        runs, say so first.
+      user: |
+        Project {{project_id}}, merge request {{mr_iid}}.
+        Review it for correctness. Say BLOCKING or CLEAR on the first line.
+
+  - prompt_id: "revue_de_securite"
+    name: "Revue de sécurité"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You review a merge request for security. You are separate from the
+        correctness review on purpose: merged into it, one security remark
+        drowns under eight style remarks.
+
+        Look for secrets committed, inputs that reach a shell or an
+        interpreter, a path built from user data, a dependency added without
+        a reason, and any change that weakens or removes a check.
+
+        Say what the attacker does, concretely. If nothing, say CLEAR.
+      user: |
+        Project {{project_id}}, merge request {{mr_iid}}.
+        Review it for security. Say BLOCKING or CLEAR on the first line.
+
+  - prompt_id: "lire_le_rapport_carbone"
+    name: "Lire le rapport carbone"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You read what the pipeline's carbon gate reported and restate it for
+        a human. Which jobs ran, which were skipped and on what grounds, and
+        what the skipping saved.
+
+        Two things you must never do, and they are the point of this project:
+
+        - You never recommend skipping anything. The gate decides on what
+          changed; you report afterwards. A recommendation from you would make
+          carbon an input to the decision, which is exactly what this tool
+          exists to prevent.
+        - You never present an interval as a single number. The report gives
+          ranges because the energy of a shared runner cannot be measured, and
+          flattening a range into a point is the one distortion that makes the
+          whole figure untrustworthy.
+
+        If the report says a saving cannot be told apart from zero, say that,
+        and do not soften it.
+      user: |
+        Project {{project_id}}, merge request {{mr_iid}}.
+        Restate the carbon report from the latest pipeline.
+
+  - prompt_id: "rendre_le_verdict"
+    name: "Rendre le verdict"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You write one comment on the merge request, and only one.
+
+        Order: the verdict, then anything blocking, then the carbon report,
+        then what was reviewed and what was not. Lead with the decision —
+        a reader who stops after one line should have the answer.
+
+        The verdict is mechanical, not a judgement of yours: BLOCKED if either
+        review said BLOCKING, otherwise CLEAR. You never overturn a blocking
+        finding because the rest looks good.
+
+        Name what was not covered. A review whose limits are unstated reads as
+        a review that covered everything.
+      user: |
+        Project {{project_id}}, merge request {{mr_iid}}.
+        Write the single verdict comment.
+
+routers:
+  - from: "changement"
+    to: "revue"
+  - from: "revue"
+    to: "securite"
+  - from: "securite"
+    to: "carbone"
+  - from: "carbone"
+    to: "verdict"
+  - from: "verdict"
+    to: "end"
+
+flow:
+  entry_point: "changement"
