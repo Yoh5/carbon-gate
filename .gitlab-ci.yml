@@ -58,18 +58,30 @@ porte:
   script:
     # Sur une merge request, la base est le point de divergence ; sinon, le
     # commit d'avant. Passer la mauvaise base ferait croire que tout a changé.
-    - BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$CI_COMMIT_BEFORE_SHA}"
-    # Au PREMIER push d'une branche, GitLab met `CI_COMMIT_BEFORE_SHA` à
-    # quarante zéros. La porte basculait alors sur son repli — tout lancer —
-    # et le disait honnêtement. Mais ici « on ne sait pas » est faux : on
-    # sait. Une branche neuve se compare à la branche par défaut, et
-    # l'information est là. Se rabattre sur le repli quand la réponse est
-    # disponible, c'est jeter la démonstration pour rien.
+    # Quelle est la bonne base, et pourquoi elle dépend du contexte.
+    #
+    # `CI_COMMIT_BEFORE_SHA` répond à « qu'est-ce que ce push a ajouté ». Sur
+    # la branche par défaut c'est exactement la question. Sur une branche de
+    # travail, non : après un rebase ou un amend, l'ancien sommet n'est plus
+    # un ancêtre, et le diff ramasse tout ce que la branche par défaut a
+    # gagné entre-temps. Mesuré ici : un commit ne touchant que le README a
+    # relancé les quatre jobs, parce que la base était le sommet d'avant le
+    # rebase.
+    #
+    # La question qu'une branche doit poser est « qu'est-ce que CETTE branche
+    # change », et la réponse est le point de fourche — `merge-base`.
     - |
-      if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+      if [ -n "$CI_MERGE_REQUEST_DIFF_BASE_SHA" ]; then
+        # GitLab a déjà calculé le point de divergence exact de la MR.
+        BASE="$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+        echo "merge request : base fournie par GitLab"
+      elif [ "$CI_COMMIT_REF_NAME" = "$CI_DEFAULT_BRANCH" ]            && [ -n "$CI_COMMIT_BEFORE_SHA" ]            && [ "$CI_COMMIT_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+        BASE="$CI_COMMIT_BEFORE_SHA"
+        echo "branche par defaut : on compare au push precedent"
+      else
         git fetch --quiet origin "$CI_DEFAULT_BRANCH"
-        BASE="$(git rev-parse FETCH_HEAD)"
-        echo "branche neuve : on compare a $CI_DEFAULT_BRANCH"
+        BASE="$(git merge-base FETCH_HEAD HEAD)"
+        echo "branche de travail : on compare au point de fourche avec $CI_DEFAULT_BRANCH"
       fi
     - echo "base de comparaison - $BASE"
     - python -m carbongate decide --depuis "$BASE" --env carbongate.env --pipeline-gitlab retenu.yml
