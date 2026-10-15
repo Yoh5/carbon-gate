@@ -149,6 +149,58 @@ def variable(nom_du_job: str) -> str:
     return f"CARBONGATE_{propre or 'JOB'}"
 
 
+#: Le pipeline enfant : la seule façon qu'une décision prise *pendant* un
+#: pipeline change ce qui y tourne.
+#:
+#: `rules:` est évalué à la **création** du pipeline, avant que le moindre job
+#: ait tourné. Un artefact dotenv écrit par la porte arrive donc toujours trop
+#: tard : il est visible comme variable d'environnement pour les jobs
+#: suivants, mais pas pour les règles qui décident de leur existence. Le
+#: premier pipeline réel l'a montré sans ambiguïté — la porte a écrit
+#: `CARBONGATE_VERIFIER_README=false` et le job a tourné quand même.
+#:
+#: GitLab a un mécanisme pour ça, et c'est le seul : la porte **engendre** un
+#: pipeline, et le parent le déclenche. Ce qui n'est pas dedans n'existe pas.
+#:
+#: Le fichier engendré ne contient que des **noms** : les corps de jobs vivent
+#: dans `.gitlab/jobs.yml` et sont étendus. Un générateur qui écrirait du
+#: shell serait un générateur à relire à chaque exécution.
+MODELES = ".gitlab/jobs.yml"
+
+
+def pipeline_gitlab(decision, modeles: str = MODELES) -> str:
+    """Le YAML du pipeline enfant, à partir de la décision."""
+    lignes = [
+        "# Engendré par `carbongate decide`. Ne pas éditer à la main.",
+        "#",
+        "# Ce pipeline ne porte que les jobs retenus. Ceux qui manquent ont été",
+        "# sautés parce que rien de ce dont ils dépendent n'a changé — jamais",
+        "# parce qu'ils coûtaient cher.",
+        "",
+        "include:",
+        f"  - local: '{modeles}'",
+        "",
+        "stages: [verifier]",
+        "",
+    ]
+    for travail in decision.a_lancer:
+        lignes.append(f"{travail.nom}:")
+        lignes.append(f"  extends: .job-{travail.nom}")
+        lignes.append("")
+
+    if not decision.a_lancer:
+        # Un pipeline vide est refusé par GitLab. Le dire explicitement vaut
+        # mieux qu'un échec de syntaxe que personne ne saura lire.
+        lignes += ["rien-a-faire:",
+                   "  stage: verifier",
+                   "  image: busybox",
+                   "  script:",
+                   "    - echo 'Aucun job retenu : rien de ce dont ils "
+                   "dépendent n a changé.'",
+                   ""]
+    return "\n".join(lignes)
+
+
 # ── Sous-commandes ───────────────────────────────────────────────────────
 def commande_decide(args: argparse.Namespace) -> int:
     travaux, modele = charger_config(Path(args.config))
@@ -170,6 +222,12 @@ def commande_decide(args: argparse.Namespace) -> int:
     print(f"\n{args.env} écrit :")
     for ligne in lignes:
         print(f"  {ligne}")
+
+    if args.pipeline_gitlab:
+        Path(args.pipeline_gitlab).write_text(
+            pipeline_gitlab(decision) + "\n", encoding="utf-8")
+        retenus = ", ".join(t.nom for t in decision.a_lancer) or "aucun"
+        print(f"\n{args.pipeline_gitlab} écrit : {retenus}")
     return 0
 
 
@@ -274,6 +332,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                    help="fichier dotenv pour le pipeline")
     d.add_argument("--depuis", default=None,
                    help="base de comparaison git (ex. $CI_MERGE_REQUEST_DIFF_BASE_SHA)")
+    d.add_argument("--pipeline-gitlab", default=None,
+                   help="écrit le pipeline enfant ne portant que les jobs retenus")
     d.set_defaults(fonction=commande_decide)
 
     m = sous.add_parser("mesure", help="lance une commande et enregistre son coût")

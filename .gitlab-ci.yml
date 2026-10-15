@@ -5,161 +5,97 @@
 # produit qui se démontre sur son propre sujet, et l'historique de pipeline
 # **est** la preuve.
 #
-# ## Comment ça marche, en trois temps
+# ## Pourquoi un pipeline enfant, et pas des `rules:`
 #
-# 1. `porte` regarde ce qui a changé et écrit un fichier dotenv : une variable
-#    par job, `true` ou `false`.
-# 2. Chaque job porte une règle sur sa variable. Un job non retenu apparaît
-#    **sauté dans l'historique**, et non absent : une économie qu'on ne voit
-#    pas n'est pas vérifiable.
-# 3. Les jobs qui tournent passent par `carbongate mesure`, qui relève ce
-#    qu'ils consomment vraiment. Le relevé est mis en cache et sert de base au
-#    chiffrage du pipeline suivant.
+# La première version gardait chaque job par une variable que la porte
+# écrivait dans un artefact dotenv. Ça ne pouvait pas marcher, et il a fallu
+# un pipeline VERT pour s'en apercevoir : **`rules:` est évalué à la création
+# du pipeline**, avant que le moindre job ait tourné. Le dotenv arrive après —
+# il sert de variable d'environnement aux jobs suivants, jamais aux règles qui
+# décident de leur existence.
 #
-# ## Pourquoi `!= "false"` et non `== "true"`
+# L'observation est nette : la porte a écrit `CARBONGATE_VERIFIER_README=false`
+# et le job a tourné quand même. Les six jobs passaient au vert et la décision
+# de la porte n'atteignait rien. Un pipeline vert peut cacher que le produit
+# entier est débranché.
 #
-# La première version gardait chaque job par `== "true"`. La première
-# exécution réelle a montré ce que ça coûte : `porte` est morte (git absent de
-# l'image), le dotenv n'a donc jamais existé, les variables sont restées
-# vides, et **les trois jobs gardés ont disparu du pipeline** — pas sautés,
-# absents. Une porte en panne effaçait la vérification au lieu de la laisser
-# tourner.
-#
-# Avec `!= "false"`, un job tourne sauf si la porte a explicitement dit non.
-# Une variable absente veut dire « la porte n'a pas pu se prononcer », et dans
-# ce cas tout tourne. C'est la même distinction que dans le code : « rien n'a
-# changé » et « on ne sait pas » ne donnent pas la même décision.
+# Donc la porte **engendre** un pipeline ne portant que les jobs retenus, et
+# ce pipeline-ci le déclenche. Ce qui n'y est pas n'existe pas, et le pipeline
+# enfant visible dans l'historique est exactement la liste de ce qui a été
+# jugé nécessaire.
 #
 # ## Ce que ce pipeline ne fait pas, et c'est la règle du projet
 #
-# **Le carbone ne décide jamais de ce qui tourne.** `porte` décide sur ce qui a
-# changé ; le chiffrage vient après et ne fait que dire ce que la décision a
-# épargné. `scan-securite` est marqué `toujours` dans `carbongate.json` et ne
-# peut pas être sauté, quel que soit son coût — il n'existe aucun seuil
-# d'émission auquel il devient raisonnable de ne pas scanner une livraison.
+# **Le carbone ne décide jamais de ce qui tourne.** La porte décide sur ce qui
+# a changé ; le chiffrage vient après et ne fait que dire ce que la décision a
+# épargné. `scan-securite` porte `toujours: true` dans `carbongate.json` : il
+# est dans tous les pipelines engendrés, quel que soit son coût.
 #
 # ## Les deux réglages qui ne sont pas cosmétiques
 #
-# `GIT_DEPTH: 0` : sans l'historique, `git diff` ne peut pas répondre. La porte
-# bascule alors sur son repli — **tout lancer** — ce qui est sûr mais annule
-# tout l'intérêt. Un clone superficiel ne casse rien, il rend juste la porte
-# muette, et c'est dit dans le rapport plutôt que caché.
+# `GIT_DEPTH: 0` : sans l'historique, `git diff` ne peut pas répondre, et la
+# porte bascule sur son repli — tout lancer. Sûr, mais la démonstration
+# disparaît.
 #
-# `cache` plutôt qu'`artifacts` pour les mesures : un artefact ne survit pas au
-# pipeline, et une mesure sert précisément au pipeline **suivant**.
+# `cache` plutôt qu'`artifacts` pour les mesures : un artefact ne survit pas
+# au pipeline, et une mesure sert précisément au pipeline **suivant**.
 
-stages: [porte, verifier, livrer, bilan]
+stages: [porte, verifier, bilan]
 
 variables:
   GIT_DEPTH: 0
-  PYTHON_IMAGE: python:3.12-slim
-
-default:
-  image: $PYTHON_IMAGE
-  cache:
-    key: "carbongate-mesures-$CI_COMMIT_REF_SLUG"
-    paths: [carbongate-mesures.json]
 
 # ── 1. La porte ──────────────────────────────────────────────────────────
 porte:
   stage: porte
+  image: python:3.12-slim
   before_script:
     # `python:3.12-slim` n'embarque pas git, et la porte en a besoin pour
-    # savoir ce qui a changé. Sans lui elle bascule sur son repli — tout
-    # lancer — ce qui est sûr et inutile : on l'installe plutôt.
+    # savoir ce qui a changé. Sans lui elle bascule sur son repli.
     - apt-get update -qq && apt-get install -y -qq --no-install-recommends git
+    - pip install --quiet --upgrade pip
+    - pip install --quiet -e .
   script:
     # Sur une merge request, la base est le point de divergence ; sinon, le
-    # commit d'avant. Passer la mauvaise base ferait croire que tout a changé,
-    # ce qui est sûr mais inutile.
+    # commit d'avant. Passer la mauvaise base ferait croire que tout a changé.
     - BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$CI_COMMIT_BEFORE_SHA}"
     - echo "base de comparaison - $BASE"
-    - python -m carbongate decide --depuis "$BASE" --env carbongate.env
+    - python -m carbongate decide --depuis "$BASE" --env carbongate.env --pipeline-gitlab retenu.yml
+    - echo "--- le pipeline engendre ---"
+    - cat retenu.yml
   artifacts:
-    reports:
-      dotenv: carbongate.env
-    paths: [carbongate.env]
+    paths: [retenu.yml, carbongate.env]
     expire_in: 1 week
 
-# ── 2. Les jobs, chacun gardé par sa variable ────────────────────────────
-.mesure: &mesure
+# ── 2. Ce que la porte a retenu, et rien d'autre ─────────────────────────
+retenu:
   stage: verifier
-  before_script:
-    # `pip-audit` audite l'ENVIRONNEMENT, pas seulement ce projet. Un dépôt
-    # sans aucune dépendance d'exécution peut donc échouer sur sa propre
-    # chaîne d'outils, et c'est ce qui est arrivé : l'image embarque pip
-    # 25.0.1, que PYSEC-2026-1795 vise, corrigé en 25.3. La réponse est de
-    # mettre à jour, pas d'ignorer la vulnérabilité — un scan qu'on fait taire
-    # la première fois qu'il parle ne sert plus à rien ensuite.
-    - pip install --quiet --upgrade pip
-    # `-e .` installe le paquet, pas de quoi le tester : `pyproject.toml` ne
-    # déclare aucune dépendance d'exécution, c'est voulu, et pytest n'en est
-    # donc pas une. Sans cette ligne, `python -m pytest` sortait en 25 ms et
-    # la mesure refusait — correctement — d'enregistrer ça.
-    - pip install --quiet -e . pytest pyyaml
-
-tests:
-  <<: *mesure
-  rules:
-    - if: $CARBONGATE_TESTS != "false"
-  script:
-    - python -m carbongate mesure --nom tests -- python -m pytest -q
-  artifacts:
-    paths: [carbongate-mesures.json]
-    expire_in: 1 week
-
-lint:
-  <<: *mesure
-  rules:
-    - if: $CARBONGATE_LINT != "false"
-  script:
-    - pip install --quiet ruff
-    - python -m carbongate mesure --nom lint -- ruff check carbongate tests
-
-verifier-readme:
-  <<: *mesure
-  rules:
-    - if: $CARBONGATE_VERIFIER_README != "false"
-  script:
-    # Le garde-fou du dépôt : il sort en erreur si un chiffre du README ne
-    # correspond plus à ce que le code calcule.
-    - python -m carbongate mesure --nom verifier-readme -- python verifier_readme.py
-
-# `toujours: true` dans carbongate.json : aucune règle ici ne peut le sauter.
-#
-# `needs: []` n'est pas une optimisation. Sans lui, ce job appartient à un
-# étage postérieur, et GitLab marque **Skipped** tout un étage dès qu'un étage
-# précédent échoue : le premier pipeline réel affichait donc
-# « scan-securite : Skipped » parce que `lint` avait échoué. Un juré qui lit
-# l'historique voit alors le seul job que ce projet jure de ne jamais sauter,
-# sauté. `needs: []` le détache de l'ordre des étages : il part immédiatement
-# et son sort ne dépend de personne.
-scan-securite:
-  <<: *mesure
-  stage: livrer
-  needs: []
-  script:
-    - pip install --quiet pip-audit
-    # Sans `--strict` : pip-audit refuse d'auditer le paquet local installé
-    # en editable, et `--strict` transforme ce saut en échec. Le job tombait
-    # donc sur l'absence de données, pas sur une vulnérabilité — un rouge qui
-    # ne dit rien finit par être ignoré. Sans l'option, une vraie
-    # vulnérabilité fait toujours échouer le job, ce qui est le but.
-    - python -m carbongate mesure --nom scan-securite -- pip-audit
+  needs: [porte]
+  trigger:
+    include:
+      - artifact: retenu.yml
+        job: porte
+    # `depend` : le parent échoue si l'enfant échoue. Sans ça, un test rouge
+    # dans l'enfant laisserait le parent au vert — exactement le genre de vert
+    # qu'on vient de passer la journée à démonter.
+    strategy: depend
 
 # ── 3. Le bilan ──────────────────────────────────────────────────────────
 bilan:
   stage: bilan
   when: always
-  needs:
-    - job: porte
-      artifacts: true
+  needs: [porte]
+  image: python:3.12-slim
   before_script:
+    - pip install --quiet --upgrade pip
     - pip install --quiet -e .
+  cache:
+    key: "carbongate-mesures-$CI_COMMIT_REF_SLUG"
+    paths: [carbongate-mesures.json]
   script:
-    # Le rapport imprime toujours ses sources et ses réserves : un bilan de
-    # carbone qui ne cite pas ses coefficients n'est pas vérifiable, et un
-    # bilan dont on ignore la couverture n'est pas un bilan.
+    # Le rapport imprime toujours ses sources et ses réserves : un bilan qui
+    # ne cite pas ses coefficients n'est pas vérifiable, et un bilan dont on
+    # ignore la couverture n'est pas un bilan.
     - python -m carbongate rapport
   artifacts:
     paths: [carbongate-mesures.json]
