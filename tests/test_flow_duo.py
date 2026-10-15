@@ -97,13 +97,48 @@ def test_le_graphe_se_termine_et_ne_laisse_personne_de_cote(flow):
 # --------------------------------------------------------------------------- #
 # Le niveau d'autonomie déclaré doit être celui du fichier
 # --------------------------------------------------------------------------- #
-def test_aucune_etape_humaine_puisque_la_soumission_dit_hands_off(flow):
-    """Déclarer Hands-off et laisser une pause humaine serait une fausse
-    déclaration, et c'est le genre de détail qu'un juré vérifie."""
+def test_aucun_composant_ne_peut_fusionner(flow):
+    """Le niveau déclaré doit suivre l'outillage, pas l'inverse.
+
+    `accept_merge_request` existe dans la boîte à outils : le donner à
+    `verdict` ferait un flow Hands-off en une ligne. Mais `verdict` est un
+    AgentComponent, et laisser un modèle décider d'une fusion est ce que ce
+    dépôt refuse partout ailleurs. Supervised est donc la déclaration exacte,
+    et ce test tombe si quelqu'un rend la fusion possible sans la redéclarer.
+    """
+    for composant in flow["components"]:
+        assert "accept_merge_request" not in composant.get("toolset", []), (
+            f"{composant['name']} peut fusionner : la soumission est déclarée "
+            "Supervised, ce qui deviendrait faux")
+
+
+def test_aucune_approbation_etape_par_etape(flow):
+    """Un `HumanInputComponent` demanderait une approbation à chaque étape,
+    ce qui serait le niveau Assisted — en dessous de ce qu'on déclare."""
     types = {c["type"] for c in flow["components"]}
-    assert "HumanInputComponent" not in types, (
-        "un composant d'entrée humaine fait basculer la soumission en "
-        "Supervised : soit on le retire, soit on change la déclaration")
+    assert "HumanInputComponent" not in types
+
+
+def test_chaque_composant_declare_son_outillage(flow):
+    """Le catalogue l'exige — `toolset: field required` au premier essai — et
+    le moindre privilège l'exige aussi."""
+    for composant in flow["components"]:
+        outils = composant.get("toolset")
+        assert outils, f"{composant['name']} n'a pas de toolset"
+        assert len(outils) <= 4, (
+            f"{composant['name']} en demande {len(outils)} : un agent qui peut "
+            "tout faire n'a pas de frontière")
+
+
+def test_celui_qui_ecrit_ne_lit_rien_et_celui_qui_lit_necrit_rien(flow):
+    """La séparation qui rend le commentaire final sûr."""
+    par_nom = {c["name"]: c.get("toolset", []) for c in flow["components"]}
+    assert par_nom["verdict"] == ["create_merge_request_note"], (
+        "le rédacteur du verdict doit pouvoir écrire un commentaire, et rien d'autre")
+    for lecteur in ("changement", "revue", "securite", "carbone"):
+        assert not any(o.startswith(("create_", "add_", "edit_", "accept_"))
+                       for o in par_nom[lecteur]), (
+            f"{lecteur} peut écrire : un relecteur n'a aucune raison de le faire")
 
 
 def test_aucun_tool_name_nest_invente(flow):

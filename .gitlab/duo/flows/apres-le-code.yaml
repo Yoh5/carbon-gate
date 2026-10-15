@@ -1,7 +1,20 @@
 # Le flow post-code : revue, sécurité, carbone, verdict — sans humain dans la boucle.
 #
-# Déclaré en Hands-off, et la raison tient en une phrase : **ce qui décide ici
-# n'est pas un agent.** Le pipeline a déjà tranché ce qui tourne, avec du code
+# Déclaré en **Supervised**, et c'est une correction assumée : ce flow visait
+# Hands-off jusqu'à ce que le choix des outils pose la seule question qui
+# compte — **qui fusionne ?**
+#
+# `accept_merge_request` existe dans la boîte à outils. Le donner au composant
+# `verdict` ferait un flow entièrement autonome en une ligne. Mais `verdict`
+# est un AgentComponent : laisser un modèle décider d'une fusion est
+# exactement ce que ce dépôt passe son temps à refuser. Aucun composant ne
+# l'a, et le niveau déclaré suit l'outillage réel plutôt que l'inverse.
+#
+# Supervised dit précisément ce qui se passe ici : « vous approuvez le
+# résultat, pas les étapes ». Les agents font tout le trajet seuls — lire,
+# juger, chiffrer, rédiger — et l'action irréversible reste humaine.
+#
+# Ce qui décide reste déterministe : **ce qui décide ici n'est pas un agent.** Le pipeline a déjà tranché ce qui tourne, avec du code
 # déterministe qui regarde ce qui a changé ; `carbongate rapport` a chiffré ce
 # que ça a coûté. Les agents de ce flow lisent, jugent la correction et la
 # sécurité, et écrivent un verdict. Aucun d'eux ne peut sauter un job, et
@@ -32,8 +45,17 @@
 # première amélioration à faire, et elle est substantielle : elle déplacerait
 # la publication du verdict et la fusion du côté déterministe.
 #
-# Pas de `HumanInputComponent` non plus, et c'est le choix de niveau : en
-# ajouter un ferait basculer la soumission en Supervised.
+# Pas de `HumanInputComponent` non plus : la supervision ne passe pas par une
+# pause dans le flow, elle passe par le fait que la fusion n'est dans l'outillage
+# d'aucun composant. Un `HumanInputComponent` demanderait une approbation
+# *étape par étape*, ce qui serait le niveau Assisted, en dessous.
+#
+# ## Moindre privilège, et pourquoi chaque toolset est si court
+#
+# L'éditeur du catalogue le rappelle lui-même : n'accordez que les outils dont
+# un agent a réellement besoin. `verdict` n'a que `create_merge_request_note` —
+# il écrit un commentaire et ne peut rien lire de plus ni rien faire d'autre.
+# Les deux relecteurs lisent le diff et le dépôt, et n'écrivent rien.
 
 version: "v1"
 environment: ambient
@@ -43,6 +65,9 @@ components:
   - name: "changement"
     type: AgentComponent
     prompt_id: "lire_le_changement"
+    toolset:
+      - "get_merge_request"
+      - "list_merge_request_diffs"
     inputs:
       - from: "context:project_id"
         as: "project_id"
@@ -55,6 +80,11 @@ components:
   - name: "revue"
     type: AgentComponent
     prompt_id: "revue_de_correction"
+    toolset:
+      - "get_merge_request"
+      - "list_merge_request_diffs"
+      - "get_repository_file"
+      - "grep"
     inputs:
       - from: "context:project_id"
         as: "project_id"
@@ -67,6 +97,11 @@ components:
   - name: "securite"
     type: AgentComponent
     prompt_id: "revue_de_securite"
+    toolset:
+      - "get_merge_request"
+      - "list_merge_request_diffs"
+      - "get_repository_file"
+      - "grep"
     inputs:
       - from: "context:project_id"
         as: "project_id"
@@ -80,6 +115,10 @@ components:
   - name: "carbone"
     type: AgentComponent
     prompt_id: "lire_le_rapport_carbone"
+    toolset:
+      - "list_pipelines"
+      - "get_pipeline"
+      - "get_job_logs"
     inputs:
       - from: "context:project_id"
         as: "project_id"
@@ -92,6 +131,8 @@ components:
   - name: "verdict"
     type: AgentComponent
     prompt_id: "rendre_le_verdict"
+    toolset:
+      - "create_merge_request_note"
     inputs:
       - from: "context:project_id"
         as: "project_id"
