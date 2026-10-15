@@ -133,7 +133,12 @@ scan-securite:
   needs: []
   script:
     - pip install --quiet pip-audit
-    - python -m carbongate mesure --nom scan-securite -- pip-audit --strict
+    # Sans `--strict` : pip-audit refuse d'auditer le paquet local installé
+    # en editable, et `--strict` transforme ce saut en échec. Le job tombait
+    # donc sur l'absence de données, pas sur une vulnérabilité — un rouge qui
+    # ne dit rien finit par être ignoré. Sans l'option, une vraie
+    # vulnérabilité fait toujours échouer le job, ce qui est le but.
+    - python -m carbongate mesure --nom scan-securite -- pip-audit
 
 # ── 3. Le bilan ──────────────────────────────────────────────────────────
 bilan:

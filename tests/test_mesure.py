@@ -225,3 +225,36 @@ def test_la_periode_par_defaut_mesure_proprement_un_job_dune_demi_seconde():
     m = mesurer(brule(0.5))
     assert m.reserves == [], m.reserves
     assert m.echantillons >= 30
+
+
+def test_la_sortie_de_la_commande_mesuree_est_visible(capfd):
+    """Le défaut que ce test ferme : la sortie partait dans DEVNULL.
+
+    `scan-securite` a échoué sur GitLab et le journal ne portait que la ligne
+    de mesure puis `exit code 1`. Une porte qui mesure un scan de sécurité et
+    en avale les trouvailles est pire qu'inutile : elle fait échouer le job
+    sans que personne puisse savoir pourquoi.
+    """
+    import sys as _sys
+
+    from carbongate.mesure import mesurer
+
+    mesure = mesurer([_sys.executable, "-c",
+                      "import sys; print('TROUVAILLE'); "
+                      "print('SUR-ERREUR', file=sys.stderr)"])
+    sortie = capfd.readouterr()
+    assert "TROUVAILLE" in sortie.out
+    assert "SUR-ERREUR" in sortie.err
+    assert mesure.code_de_sortie == 0
+
+
+def test_on_peut_encore_faire_taire_une_commande_mais_il_faut_le_demander():
+    """`exemple.py` lance des charges synthétiques dont le bavardage
+    n'apprend rien ; c'est le seul cas où le silence se justifie."""
+    import sys as _sys
+
+    from carbongate.mesure import mesurer
+
+    mesure = mesurer([_sys.executable, "-c", "print('x' * 100)"],
+                     silencieux=True)
+    assert mesure.code_de_sortie == 0

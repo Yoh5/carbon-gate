@@ -75,7 +75,10 @@ def main() -> int:
 
     mesures, observations = {}, {}
     for travail, ms, mo in PIPELINE:
-        mesure = mesurer(travail_factice(travail.nom, ms, mo))
+        # Silencieux : ces charges sont synthétiques, leur bavardage
+        # n'apprend rien. C'est le seul cas où le silence se justifie.
+        mesure = mesurer(travail_factice(travail.nom, ms, mo),
+                         silencieux=True)
         mesures[travail.nom] = mesure
         # Un job dont la mesure porte une réserve n'entre pas dans le bilan.
         # L'exclure est honnête ; lui inventer une consommation ne le serait pas.

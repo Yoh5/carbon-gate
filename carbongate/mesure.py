@@ -236,12 +236,24 @@ def sonde_de_la_plateforme() -> _Sonde | None:
 # La mesure
 # --------------------------------------------------------------------------- #
 def mesurer(commande: Sequence[str], *, periode: float = PERIODE,
-            cwd: str | Path | None = None) -> Mesure:
+            cwd: str | Path | None = None, silencieux: bool = False) -> Mesure:
     """Lance `commande` et mesure ce qu'elle consomme.
 
     Le processus est échantillonné pendant qu'il tourne : le temps processeur
     est monotone, donc le dernier relevé fait foi ; la mémoire est intégrée par
     trapèzes sur les relevés.
+
+    **La sortie de la commande passe par défaut, et ce défaut a changé.** Elle
+    était jetée dans `DEVNULL`, ce qui convenait à `exemple.py` — des charges
+    synthétiques dont le bavardage n'apprend rien. Dès que `mesure` enveloppe
+    les vrais jobs d'un pipeline, jeter la sortie veut dire qu'une suite de
+    tests qui échoue n'affiche aucun échec, qu'un scan de sécurité n'affiche
+    aucune trouvaille, et que le job meurt sur un code de sortie nu.
+
+    C'est arrivé : `scan-securite` a échoué sur GitLab et le journal ne
+    contenait que la ligne de mesure, puis `exit code 1`. L'outil avait avalé
+    exactement ce qu'il était censé rendre visible. `silencieux=True` reste
+    disponible pour la démonstration, mais il faut le demander.
     """
     if periode <= 0:
         raise ValueError(f"la période d'échantillonnage doit être positive : {periode}")
@@ -265,9 +277,11 @@ def mesurer(commande: Sequence[str], *, periode: float = PERIODE,
             arret.wait(periode)
 
     debut = time.monotonic()
+    # `None` hérite des descripteurs du parent : la commande écrit droit dans
+    # le journal, sans que rien ne soit bufferisé ni reconstitué après coup.
+    canal = subprocess.DEVNULL if silencieux else None
     processus = subprocess.Popen(list(commande), cwd=cwd,
-                                 stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)
+                                 stdout=canal, stderr=canal)
     fil = None
     if sonde is not None:
         fil = threading.Thread(target=echantillonner, args=(processus.pid,),
