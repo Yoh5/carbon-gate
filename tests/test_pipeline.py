@@ -1,0 +1,107 @@
+"""Le pipeline et la configuration de la porte doivent parler des mêmes jobs.
+
+`.gitlab-ci.yml` garde chaque job par une variable, et `carbongate.json`
+décide de la valeur de cette variable. Les deux fichiers portent donc le même
+nom de job, écrit deux fois — et deux écritures du même nom finissent toujours
+par diverger.
+
+La divergence est silencieuse et penche du mauvais côté : un job dont la
+variable n'est jamais posée reste indéfini, la règle `== "true"` est fausse,
+et **le job ne tourne pas**. Pas d'erreur, pas de rouge ; juste une
+vérification qui a disparu du pipeline sans que personne le demande.
+
+C'est exactement le défaut que ce projet existe pour empêcher — sauter du
+travail pour une raison qui n'est pas « rien n'a changé ».
+"""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+yaml = pytest.importorskip("yaml", reason="PyYAML n'est pas une dépendance "
+                                          "d'exécution : ce test est en plus")
+
+RACINE = Path(__file__).resolve().parent.parent
+PIPELINE = RACINE / ".gitlab-ci.yml"
+CONFIG = RACINE / "carbongate.json"
+
+
+def pipeline() -> dict:
+    return yaml.safe_load(PIPELINE.read_text(encoding="utf-8"))
+
+
+def jobs_du_pipeline() -> dict[str, dict]:
+    d = pipeline()
+    return {k: v for k, v in d.items()
+            if k not in ("stages", "variables", "default")
+            and not k.startswith(".") and isinstance(v, dict)}
+
+
+def jobs_de_la_config() -> list[dict]:
+    return json.loads(CONFIG.read_text(encoding="utf-8"))["jobs"]
+
+
+def variable_gardee(job: dict) -> str | None:
+    for regle in job.get("rules") or []:
+        trouve = re.search(r"\$(CARBONGATE_[A-Z0-9_]+)", regle.get("if", ""))
+        if trouve:
+            return trouve.group(1)
+    return None
+
+
+def test_chaque_garde_du_pipeline_correspond_a_un_job_declare():
+    """Une garde sans job derrière est une vérification qui ne tournera plus."""
+    from carbongate.cli import variable
+    declarees = {variable(j["nom"]) for j in jobs_de_la_config()}
+    for nom, job in jobs_du_pipeline().items():
+        gardee = variable_gardee(job)
+        if gardee is None:
+            continue
+        assert gardee in declarees, (
+            f".gitlab-ci.yml garde {nom} par {gardee}, que carbongate.json ne "
+            f"pose jamais : ce job ne tournera plus jamais. Déclarées : "
+            f"{sorted(declarees)}")
+
+
+def test_chaque_job_declare_a_bien_un_job_dans_le_pipeline():
+    """L'inverse : un job chiffré mais inexistant gonfle l'économie annoncée."""
+    noms_pipeline = set(jobs_du_pipeline())
+    for job in jobs_de_la_config():
+        assert job["nom"] in noms_pipeline, (
+            f"carbongate.json chiffre {job['nom']!r}, absent de .gitlab-ci.yml : "
+            "le rapport compterait une économie sur un job qui n'existe pas")
+
+
+def test_le_job_toujours_na_pas_de_garde_dans_le_pipeline():
+    """`toujours: true` et une règle `if` seraient deux avis contradictoires,
+    et c'est la règle du pipeline qui gagnerait."""
+    from carbongate.cli import variable
+    inconditionnels = {j["nom"] for j in jobs_de_la_config() if j.get("toujours")}
+    assert inconditionnels, "aucun job inconditionnel : le scan peut être sauté"
+    for nom in inconditionnels:
+        job = jobs_du_pipeline().get(nom)
+        assert job is not None
+        assert variable_gardee(job) is None, (
+            f"{nom} est déclaré toujours exécuté mais le pipeline le garde "
+            f"derrière {variable_gardee(job)}")
+
+
+def test_la_porte_elle_meme_nest_jamais_gardee():
+    """Si la porte était gardée par sa propre sortie, rien ne tournerait."""
+    assert variable_gardee(jobs_du_pipeline()["porte"]) is None
+
+
+def test_lhistorique_git_est_demande_en_entier():
+    """Sans profondeur, `git diff` ne répond pas et la porte ne saute rien —
+    sûr, mais le pipeline ne démontrerait plus rien."""
+    assert str(pipeline()["variables"]["GIT_DEPTH"]) == "0"
+
+
+def test_les_mesures_survivent_au_pipeline():
+    """Une mesure sert au pipeline suivant : un artefact ne suffirait pas."""
+    cache = pipeline()["default"]["cache"]
+    assert "carbongate-mesures.json" in cache["paths"]
+    assert "$CI_COMMIT_REF_SLUG" in cache["key"]

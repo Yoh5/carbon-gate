@@ -1,0 +1,124 @@
+# Le pipeline qui se mesure lui-même.
+#
+# Ce dépôt est un outil qui chiffre le coût carbone d'une intégration continue.
+# Le brancher sur sa propre CI n'est donc pas une case cochée : c'est le
+# produit qui se démontre sur son propre sujet, et l'historique de pipeline
+# **est** la preuve.
+#
+# ## Comment ça marche, en trois temps
+#
+# 1. `porte` regarde ce qui a changé et écrit un fichier dotenv : une variable
+#    par job, `true` ou `false`.
+# 2. Chaque job porte une règle sur sa variable. Un job non retenu apparaît
+#    **sauté dans l'historique**, et non absent : une économie qu'on ne voit
+#    pas n'est pas vérifiable.
+# 3. Les jobs qui tournent passent par `carbongate mesure`, qui relève ce
+#    qu'ils consomment vraiment. Le relevé est mis en cache et sert de base au
+#    chiffrage du pipeline suivant.
+#
+# ## Ce que ce pipeline ne fait pas, et c'est la règle du projet
+#
+# **Le carbone ne décide jamais de ce qui tourne.** `porte` décide sur ce qui a
+# changé ; le chiffrage vient après et ne fait que dire ce que la décision a
+# épargné. `scan-securite` est marqué `toujours` dans `carbongate.json` et ne
+# peut pas être sauté, quel que soit son coût — il n'existe aucun seuil
+# d'émission auquel il devient raisonnable de ne pas scanner une livraison.
+#
+# ## Les deux réglages qui ne sont pas cosmétiques
+#
+# `GIT_DEPTH: 0` : sans l'historique, `git diff` ne peut pas répondre. La porte
+# bascule alors sur son repli — **tout lancer** — ce qui est sûr mais annule
+# tout l'intérêt. Un clone superficiel ne casse rien, il rend juste la porte
+# muette, et c'est dit dans le rapport plutôt que caché.
+#
+# `cache` plutôt qu'`artifacts` pour les mesures : un artefact ne survit pas au
+# pipeline, et une mesure sert précisément au pipeline **suivant**.
+
+stages: [porte, verifier, livrer, bilan]
+
+variables:
+  GIT_DEPTH: 0
+  PYTHON_IMAGE: python:3.12-slim
+
+default:
+  image: $PYTHON_IMAGE
+  cache:
+    key: "carbongate-mesures-$CI_COMMIT_REF_SLUG"
+    paths: [carbongate-mesures.json]
+
+# ── 1. La porte ──────────────────────────────────────────────────────────
+porte:
+  stage: porte
+  script:
+    # Sur une merge request, la base est le point de divergence ; sinon, le
+    # commit d'avant. Passer la mauvaise base ferait croire que tout a changé,
+    # ce qui est sûr mais inutile.
+    - BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$CI_COMMIT_BEFORE_SHA}"
+    - echo "base de comparaison - $BASE"
+    - python -m carbongate decide --depuis "$BASE" --env carbongate.env
+  artifacts:
+    reports:
+      dotenv: carbongate.env
+    paths: [carbongate.env]
+    expire_in: 1 week
+
+# ── 2. Les jobs, chacun gardé par sa variable ────────────────────────────
+.mesure: &mesure
+  stage: verifier
+  before_script:
+    - pip install --quiet -e .
+
+tests:
+  <<: *mesure
+  rules:
+    - if: $CARBONGATE_TESTS == "true"
+  script:
+    - python -m carbongate mesure --nom tests -- python -m pytest -q
+  artifacts:
+    paths: [carbongate-mesures.json]
+    expire_in: 1 week
+
+lint:
+  <<: *mesure
+  rules:
+    - if: $CARBONGATE_LINT == "true"
+  script:
+    - pip install --quiet ruff
+    - python -m carbongate mesure --nom lint -- ruff check carbongate tests
+
+verifier-readme:
+  <<: *mesure
+  rules:
+    - if: $CARBONGATE_VERIFIER_README == "true"
+  script:
+    # Le garde-fou du dépôt : il sort en erreur si un chiffre du README ne
+    # correspond plus à ce que le code calcule.
+    - python -m carbongate mesure --nom verifier-readme -- python verifier_readme.py
+
+# `toujours: true` dans carbongate.json : aucune règle ici ne peut le sauter,
+# et le test `test_un_job_absurdement_cher_tourne_quand_meme` tient la même
+# promesse du côté du code.
+scan-securite:
+  <<: *mesure
+  stage: livrer
+  script:
+    - pip install --quiet pip-audit
+    - python -m carbongate mesure --nom scan-securite -- pip-audit --strict
+
+# ── 3. Le bilan ──────────────────────────────────────────────────────────
+bilan:
+  stage: bilan
+  when: always
+  needs:
+    - job: porte
+      artifacts: true
+  before_script:
+    - pip install --quiet -e .
+  script:
+    # Le rapport imprime toujours ses sources et ses réserves : un bilan de
+    # carbone qui ne cite pas ses coefficients n'est pas vérifiable, et un
+    # bilan dont on ignore la couverture n'est pas un bilan.
+    - python -m carbongate rapport
+  artifacts:
+    paths: [carbongate-mesures.json]
+    expire_in: 1 month

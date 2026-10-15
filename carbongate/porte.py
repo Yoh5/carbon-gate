@@ -140,7 +140,8 @@ class Decision:
 def decider(travaux: Sequence[Travail], fichiers_changes: Sequence[str],
             mesures: Mapping[str, Observation] | None = None,
             modele: Modele | None = None,
-            cout_de_decider: Observation | None = None) -> Decision:
+            cout_de_decider: Observation | None = None,
+            changements_connus: bool = True) -> Decision:
     """Qui tourne, qui ne tourne pas, et ce que ça aura coûté.
 
     `mesures` associe un nom de job à ce qu'il a consommé la dernière fois.
@@ -148,12 +149,30 @@ def decider(travaux: Sequence[Travail], fichiers_changes: Sequence[str],
     coût retenu : ne pas savoir ce qu'il coûte ne doit pas se traduire par un
     gain gratuit. Omettre un inconnu du total, c'est exactement la manière dont
     un tableau de bord finit par flatter celui qui l'a écrit.
+
+    `changements_connus=False` dit qu'on **ignore** ce qui a changé : premier
+    commit, clone superficiel, base de comparaison absente. Tout tourne alors,
+    et chaque motif le dit.
+
+    Ce paramètre existe parce que son absence a produit exactement le défaut
+    que ce projet est censé rendre impossible. La ligne de commande passait
+    `["*"]` comme liste de fichiers pour signifier « on ne sait pas » — mais
+    `"*"` est un *nom de fichier*, et `fnmatch("*", "*.py")` est faux. Tous les
+    jobs à motifs étaient donc **sautés**, et seuls les `toujours` survivaient.
+    Le repli annoncé comme sûr faisait le contraire de ce qu'il disait, dans le
+    sens où ça coûte un incident et pas des grammes.
+
+    « Rien n'a changé » et « on ne sait pas ce qui a changé » ne sont pas la
+    même chose, et les encoder tous deux par une liste de chaînes garantissait
+    qu'on finirait par les confondre.
     """
     decision = Decision()
     for travail in travaux:
-        garde = travail.concerne(fichiers_changes)
+        garde = True if not changements_connus else travail.concerne(fichiers_changes)
         (decision.a_lancer if garde else decision.sautes).append(travail)
-        decision.motifs[travail.nom] = travail.raison(fichiers_changes)
+        decision.motifs[travail.nom] = (
+            travail.raison(fichiers_changes) if changements_connus
+            else "ce qui a changé n'a pas pu être établi, donc rien n'est sauté")
 
     if mesures is None or modele is None:
         return decision

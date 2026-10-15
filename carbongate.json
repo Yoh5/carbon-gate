@@ -1,0 +1,73 @@
+{
+  "_lisez_moi": "Les jobs ici doivent porter les mêmes noms que les gardes de .gitlab-ci.yml : tests/test_pipeline.py le vérifie, parce qu'un nom qui diverge saute un job en silence.",
+  "jobs": [
+    {
+      "nom": "tests",
+      "motifs": [
+        "*.py",
+        "carbongate/*",
+        "tests/*",
+        "pyproject.toml"
+      ]
+    },
+    {
+      "nom": "lint",
+      "motifs": [
+        "*.py",
+        "carbongate/*",
+        "tests/*"
+      ]
+    },
+    {
+      "nom": "verifier-readme",
+      "motifs": [
+        "README.md",
+        "carbongate/*",
+        "exemple.py",
+        "verifier_readme.py"
+      ]
+    },
+    {
+      "nom": "scan-securite",
+      "toujours": true
+    }
+  ],
+  "modele": {
+    "watts_par_coeur": {
+      "bas": 0.74,
+      "haut": 3.5,
+      "unite": "W/vCPU",
+      "source": "Cloud Carbon Footprint, moyennes x86 au repos et en charge"
+    },
+    "watts_par_gigaoctet": {
+      "bas": 0.3,
+      "haut": 0.42,
+      "unite": "W/Go",
+      "source": "Cloud Carbon Footprint, coefficient mémoire"
+    },
+    "intensite_reseau": {
+      "bas": 380.0,
+      "haut": 480.0,
+      "unite": "gCO2e/kWh",
+      "source": "moyenne annuelle du réseau — à remplacer par une mesure horaire"
+    },
+    "carbone_incarne_machine": {
+      "bas": 1200000.0,
+      "haut": 1800000.0,
+      "unite": "gCO2e",
+      "source": "analyses de cycle de vie de serveurs, fourchette publiée"
+    },
+    "duree_de_vie": {
+      "bas": 94608000,
+      "haut": 189216000,
+      "unite": "s",
+      "source": "durée d'amortissement usuelle d'un serveur, 3 à 6 ans"
+    },
+    "part_de_machine": {
+      "bas": 0.02,
+      "haut": 0.25,
+      "unite": "part",
+      "source": "part d'un exécuteur partagé attribuée à un job — à mesurer chez soi"
+    }
+  }
+}
