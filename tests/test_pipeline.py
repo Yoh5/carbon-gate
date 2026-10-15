@@ -224,7 +224,9 @@ def test_les_trois_cas_sont_distingues():
     """Merge request, branche par défaut, branche de travail : trois
     questions différentes, trois bases différentes."""
     script = chr(10).join(pipeline()["porte"]["script"])
-    assert script.index("CI_MERGE_REQUEST_DIFF_BASE_SHA") < script.index("merge-base"), (
+    exacte = script.index("CI_MERGE_REQUEST_DIFF_BASE_SHA")
+    repli = script.index("merge-base")
+    assert exacte < repli, (
         "le repli passerait avant la base exacte fournie par GitLab")
     assert "$CI_COMMIT_REF_NAME" in script and "$CI_DEFAULT_BRANCH" in script, (
         "rien ne distingue la branche par défaut d'une branche de travail")
